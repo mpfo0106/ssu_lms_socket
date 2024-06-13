@@ -4,31 +4,35 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #define BUF_SIZE 100
-#define STU_INFO_SIZE 20
+#define FILE_BUF_SIZE 524280
+#define STU_INFO_SIZE 50
 
 void *send_msg(void *arg);
 void *recv_msg(void *arg);
-void error_handling(char *message);
+void error_handling(char *msg);
 
-char name[STU_INFO_SIZE] = "[DEFAULT]";
-char stuNum[STU_INFO_SIZE] = "[DEFAULT]";
-char msg[BUF_SIZE];
-int sock;
+char name[STU_INFO_SIZE];
+char stuNum[STU_INFO_SIZE];
+int is_professor = 0;
 
 int main(int argc, char *argv[]) {
+  int sock;
   struct sockaddr_in serv_addr;
   pthread_t snd_thread, rcv_thread;
   void *thread_return;
 
   if (argc != 3) {
-    printf("Usage : %s <IP> <port>\n", argv[0]);
+    printf("Usage: %s <IP> <port>\n", argv[0]);
     exit(1);
   }
 
   sock = socket(PF_INET, SOCK_STREAM, 0);
+  if (sock == -1)
+    error_handling("socket() error");
 
   memset(&serv_addr, 0, sizeof(serv_addr));
   serv_addr.sin_family = AF_INET;
@@ -38,18 +42,45 @@ int main(int argc, char *argv[]) {
   if (connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) == -1)
     error_handling("connect() error");
 
-  printf("Connected to server at %s:%s\n", argv[1], argv[2]);
+  printf("Connected to server\n");
 
-  // 서버와 연결된 후 name과 stuNum 입력 받기
-  printf("Enter your name: ");
-  fgets(name, STU_INFO_SIZE, stdin);
-  name[strcspn(name, "\n")] = 0; // 개행 문자 제거
-  sprintf(name, "[%s]", name);
+  printf("Are you a professor? (yes/no): ");
+  char response[10];
+  fgets(response, sizeof(response), stdin);
+  if (strncmp(response, "yes", 3) == 0) {
+    is_professor = 1;
+    write(sock, "professor", strlen("professor"));
+  } else {
+    write(sock, "student", strlen("student"));
+  }
 
-  printf("Enter your student number: ");
-  fgets(stuNum, STU_INFO_SIZE, stdin);
-  stuNum[strcspn(stuNum, "\n")] = 0; // 개행 문자 제거
-  sprintf(stuNum, "[%s]", stuNum);
+  if (is_professor) {
+    printf("Enter your name: ");
+    fgets(name, STU_INFO_SIZE - 2, stdin); // Leave space for '[' and ']'
+    name[strcspn(name, "\n")] = 0;         // Remove newline character
+    char formatted_name[STU_INFO_SIZE];
+    snprintf(formatted_name, STU_INFO_SIZE, "[%s]", name);
+    strncpy(name, formatted_name, STU_INFO_SIZE);
+
+    write(sock, name, strlen(name));
+  } else {
+    printf("Enter your name: ");
+    fgets(name, STU_INFO_SIZE - 2, stdin); // Leave space for '[' and ']'
+    name[strcspn(name, "\n")] = 0;         // Remove newline character
+    char formatted_name[STU_INFO_SIZE];
+    snprintf(formatted_name, STU_INFO_SIZE, "[%s]", name);
+    strncpy(name, formatted_name, STU_INFO_SIZE);
+
+    printf("Enter your student number: ");
+    fgets(stuNum, STU_INFO_SIZE - 2, stdin); // Leave space for '[' and ']'
+    stuNum[strcspn(stuNum, "\n")] = 0;       // Remove newline character
+    char formatted_stuNum[STU_INFO_SIZE];
+    snprintf(formatted_stuNum, STU_INFO_SIZE, "[%s]", stuNum);
+    strncpy(stuNum, formatted_stuNum, STU_INFO_SIZE);
+
+    write(sock, name, strlen(name));
+    write(sock, stuNum, strlen(stuNum));
+  }
 
   pthread_create(&snd_thread, NULL, send_msg, (void *)&sock);
   pthread_create(&rcv_thread, NULL, recv_msg, (void *)&sock);
@@ -61,7 +92,7 @@ int main(int argc, char *argv[]) {
 
 void *send_msg(void *arg) {
   int sock = *((int *)arg);
-  char name_msg[STU_INFO_SIZE + BUF_SIZE];
+  char msg[BUF_SIZE];
 
   while (1) {
     fgets(msg, BUF_SIZE, stdin);
@@ -69,34 +100,45 @@ void *send_msg(void *arg) {
     if (!strncmp(msg, "quit", 4)) {
       close(sock);
       exit(0);
-    } else if (!strncmp(msg, "whisper", 7)) {
-      char whisper_msg[BUF_SIZE];
-      printf("Enter user to whisper: ");
-      fgets(whisper_msg, BUF_SIZE, stdin);
-      snprintf(name_msg, STU_INFO_SIZE + BUF_SIZE, "%s %s", msg, whisper_msg);
-    } else {
-      snprintf(name_msg, STU_INFO_SIZE + BUF_SIZE, "%s %s", name, msg);
-    }
+    } else if (!strncmp(msg, "sendfile ", 9)) {
+      char filename[BUF_SIZE];
+      sscanf(msg + 9, "%s", filename);
 
-    write(sock, name_msg, strlen(name_msg));
-    printf("Sent: %s", name_msg);
+      FILE *fp = fopen(filename, "r");
+      if (fp == NULL) {
+        printf("Failed to open file %s\n", filename);
+        continue;
+      }
+
+      // Send filename
+      write(sock, msg, strlen(msg));
+
+      // Send file content
+      char file_buffer[FILE_BUF_SIZE];
+      size_t n;
+      while ((n = fread(file_buffer, 1, FILE_BUF_SIZE, fp)) > 0) {
+        write(sock, file_buffer, n);
+      }
+      fclose(fp);
+      printf("File %s sent successfully.\n", filename);
+    } else {
+      write(sock, msg, strlen(msg));
+    }
   }
   return NULL;
 }
 
 void *recv_msg(void *arg) {
   int sock = *((int *)arg);
-  char name_msg[STU_INFO_SIZE + BUF_SIZE];
+  char name_msg[BUF_SIZE];
   int str_len;
 
   while (1) {
-    str_len = read(sock, name_msg, STU_INFO_SIZE + BUF_SIZE - 1);
+    str_len = read(sock, name_msg, sizeof(name_msg) - 1);
     if (str_len == -1)
       return (void *)-1;
-
     name_msg[str_len] = 0;
     fputs(name_msg, stdout);
-    printf("Received: %s\n", name_msg);
   }
   return NULL;
 }
