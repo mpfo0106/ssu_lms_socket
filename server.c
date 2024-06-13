@@ -1,12 +1,10 @@
 #include <arpa/inet.h>
-#include <errno.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
-#include <sys/types.h>
 #include <unistd.h>
 
 #define BUF_SIZE 100
@@ -14,7 +12,9 @@
 #define MAX_CLNT 256
 
 void *handle_clnt(void *arg);
-void send_msg(char *msg, int len, int sender_sock);
+void send_msg_to_all(char *msg, int len);
+void send_msg_to_professor(char *msg, int len);
+void send_msg_to_student(int student_sock, char *msg, int len);
 void error_handling(char *message);
 void handle_file_transfer(int clnt_sock, char *filename);
 
@@ -40,7 +40,6 @@ int main(int argc, char *argv[]) {
   pthread_mutex_init(&mutx, NULL);
   serv_sock = socket(PF_INET, SOCK_STREAM, 0);
 
-  // Set the socket options to reuse the address
   setsockopt(serv_sock, SOL_SOCKET, SO_REUSEADDR, &option, sizeof(option));
 
   memset(&serv_adr, 0, sizeof(serv_adr));
@@ -78,7 +77,6 @@ void *handle_clnt(void *arg) {
   char msg[BUF_SIZE];
   char client_type[BUF_SIZE];
   char filename[BUF_SIZE];
-  char exit_msg[BUF_SIZE + 20]; // Adjust size as needed
 
   // Receive client type
   if ((str_len = read(clnt_sock, client_type, sizeof(client_type) - 1)) <= 0) {
@@ -119,16 +117,28 @@ void *handle_clnt(void *arg) {
     if (strncmp(msg, "sendfile ", 9) == 0) {
       sscanf(msg + 9, "%s", filename);
       handle_file_transfer(clnt_sock, filename);
+    } else if (strcmp(client_type, "professor") == 0) {
+      if (strncmp(msg, "sendto ", 7) == 0) {
+        char target_id[BUF_SIZE];
+        sscanf(msg + 7, "%s", target_id);
+        for (int i = 0; i < clnt_cnt; i++) {
+          if (strcmp(clnt_ids[i], target_id) == 0) {
+            send_msg_to_student(clnt_socks[i], msg + 7 + strlen(target_id),
+                                str_len - 7 - strlen(target_id));
+            break;
+          }
+        }
+      } else {
+        send_msg_to_all(msg, str_len);
+      }
     } else {
-      send_msg(msg, str_len, clnt_sock);
+      send_msg_to_professor(msg, str_len);
     }
   }
 
   pthread_mutex_lock(&mutx);
-  int exiting_client_index = -1;
   for (int i = 0; i < clnt_cnt; i++) {
     if (clnt_sock == clnt_socks[i]) {
-      exiting_client_index = i;
       while (i++ < clnt_cnt - 1)
         clnt_socks[i] = clnt_socks[i + 1];
       break;
@@ -140,58 +150,41 @@ void *handle_clnt(void *arg) {
     printf("Professor disconnected.\n");
   }
   clnt_cnt--;
-  if (exiting_client_index != -1) {
-    snprintf(exit_msg, sizeof(exit_msg), "%s 님이 퇴장하였습니다.\n",
-             clnt_ids[exiting_client_index]);
-    send_msg(exit_msg, strlen(exit_msg), clnt_sock);
-  }
   pthread_mutex_unlock(&mutx);
   close(clnt_sock);
   return NULL;
 }
 
-void send_msg(char *msg, int len, int sender_sock) {
+void send_msg_to_all(char *msg, int len) {
   pthread_mutex_lock(&mutx);
-  char formatted_msg[BUF_SIZE + 20]; // Adjust size as needed
-  int sender_index = -1;
-
-  // Find the sender's index
   for (int i = 0; i < clnt_cnt; i++) {
-    if (clnt_socks[i] == sender_sock) {
-      sender_index = i;
-      break;
-    }
-  }
-
-  if (sender_index != -1) {
-    snprintf(formatted_msg, sizeof(formatted_msg), "%s%s",
-             clnt_ids[sender_index], msg);
-    for (int i = 0; i < clnt_cnt; i++) {
-      write(clnt_socks[i], formatted_msg, strlen(formatted_msg));
+    if (clnt_socks[i] != professor_sock) {
+      write(clnt_socks[i], msg, len);
     }
   }
   pthread_mutex_unlock(&mutx);
+}
+
+void send_msg_to_professor(char *msg, int len) {
+  pthread_mutex_lock(&mutx);
+  if (professor_sock != -1) {
+    write(professor_sock, msg, len);
+  }
+  pthread_mutex_unlock(&mutx);
+}
+
+void send_msg_to_student(int student_sock, char *msg, int len) {
+  write(student_sock, msg, len);
 }
 
 void handle_file_transfer(int clnt_sock, char *filename) {
   FILE *fp;
   char file_buffer[FILE_BUF_SIZE];
   int n;
-  char filepath[BUF_SIZE + 20]; // Adjust size as needed
-  struct stat st = {0};
 
-  // Check if the directory exists, if not, create it
-  if (stat("serverFiles", &st) == -1) {
-    if (mkdir("serverFiles", 0700) == -1) {
-      printf("Failed to create directory serverFiles: %s\n", strerror(errno));
-      return;
-    }
-  }
-
-  snprintf(filepath, sizeof(filepath), "serverFiles/%s", filename);
-  fp = fopen(filepath, "wb");
+  fp = fopen(filename, "wb");
   if (fp == NULL) {
-    printf("Failed to open file %s\n", filepath);
+    printf("Failed to open file %s\n", filename);
     return;
   }
 
@@ -200,7 +193,7 @@ void handle_file_transfer(int clnt_sock, char *filename) {
   }
 
   fclose(fp);
-  printf("File %s received successfully.\n", filepath);
+  printf("File %s received successfully.\n", filename);
 }
 
 void error_handling(char *message) {

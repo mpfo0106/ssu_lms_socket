@@ -56,8 +56,8 @@ int main(int argc, char *argv[]) {
 
   if (is_professor) {
     printf("Enter your name: ");
-    fgets(name, STU_INFO_SIZE - 2, stdin); // Leave space for '[' and ']'
-    name[strcspn(name, "\n")] = 0;         // Remove newline character
+    fgets(name, STU_INFO_SIZE - 2, stdin);
+    name[strcspn(name, "\n")] = 0;
     char formatted_name[STU_INFO_SIZE];
     snprintf(formatted_name, STU_INFO_SIZE, "[%s]", name);
     strncpy(name, formatted_name, STU_INFO_SIZE);
@@ -65,15 +65,15 @@ int main(int argc, char *argv[]) {
     write(sock, name, strlen(name));
   } else {
     printf("Enter your name: ");
-    fgets(name, STU_INFO_SIZE - 2, stdin); // Leave space for '[' and ']'
-    name[strcspn(name, "\n")] = 0;         // Remove newline character
+    fgets(name, STU_INFO_SIZE - 2, stdin);
+    name[strcspn(name, "\n")] = 0;
     char formatted_name[STU_INFO_SIZE];
     snprintf(formatted_name, STU_INFO_SIZE, "[%s]", name);
     strncpy(name, formatted_name, STU_INFO_SIZE);
 
     printf("Enter your student number: ");
-    fgets(stuNum, STU_INFO_SIZE - 2, stdin); // Leave space for '[' and ']'
-    stuNum[strcspn(stuNum, "\n")] = 0;       // Remove newline character
+    fgets(stuNum, STU_INFO_SIZE - 2, stdin);
+    stuNum[strcspn(stuNum, "\n")] = 0;
     char formatted_stuNum[STU_INFO_SIZE];
     snprintf(formatted_stuNum, STU_INFO_SIZE, "[%s]", stuNum);
     strncpy(stuNum, formatted_stuNum, STU_INFO_SIZE);
@@ -93,6 +93,7 @@ int main(int argc, char *argv[]) {
 void *send_msg(void *arg) {
   int sock = *((int *)arg);
   char msg[BUF_SIZE];
+  char msg_with_name[BUF_SIZE + STU_INFO_SIZE];
 
   while (1) {
     fgets(msg, BUF_SIZE, stdin);
@@ -110,8 +111,10 @@ void *send_msg(void *arg) {
         continue;
       }
 
+      snprintf(msg_with_name, sizeof(msg_with_name), "%s: %s", name, msg);
+
       // Send filename
-      write(sock, msg, strlen(msg));
+      write(sock, msg_with_name, strlen(msg_with_name));
 
       // Send file content
       char file_buffer[FILE_BUF_SIZE];
@@ -122,7 +125,8 @@ void *send_msg(void *arg) {
       fclose(fp);
       printf("File %s sent successfully.\n", filename);
     } else {
-      write(sock, msg, strlen(msg));
+      snprintf(msg_with_name, sizeof(msg_with_name), "%s: %s", name, msg);
+      write(sock, msg_with_name, strlen(msg_with_name));
     }
   }
   return NULL;
