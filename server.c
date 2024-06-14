@@ -92,6 +92,7 @@ void *handle_clnt(void *arg) {
   char filename[BUF_SIZE];
   int is_professor = 0;
 
+  // 클라이언트로부터 메시지 읽기
   str_len = read(clnt_sock, msg, sizeof(msg));
   if (strncmp(msg, "professor", str_len) == 0) {
     professor_sock = clnt_sock;
@@ -122,6 +123,7 @@ void *handle_clnt(void *arg) {
     msg[str_len] = '\0';
     // filename: 명령어는 교수와 학생 모두 사용할 수 있음
     if (strncmp(msg, "sendfile:", 9) == 0) {
+      // 파일 전송 요청 처리
       sscanf(msg + 9, "%s", filename);
       handle_file_transfer(clnt_sock, filename);
       continue; // 다음 메시지로 넘어감
@@ -129,7 +131,7 @@ void *handle_clnt(void *arg) {
 
     if (is_professor) {
       if (strncmp(msg, "sendto:", 7) == 0) {
-        fprintf(stderr, "good\n");
+        // 특정 학생에게 메시지 전송
         char *token = strtok(msg + 7, " ");
         char student_number[BUF_SIZE];
         char *message;
@@ -138,8 +140,6 @@ void *handle_clnt(void *arg) {
           strncpy(student_number, token, BUF_SIZE);
           message = strtok(NULL, "");
           if (message != NULL) {
-            fprintf(stderr, "student_number: %s\n", student_number);
-            fprintf(stderr, "message: %s\n", message);
             send_msg_to_student_by_number(student_number, message,
                                           strlen(message));
           } else {
@@ -149,13 +149,16 @@ void *handle_clnt(void *arg) {
           error_handling("Invalid sendto format\n");
         }
       } else {
+        // 모든 클라이언트에게 메시지 전송
         send_msg_to_all(msg, str_len);
       }
     } else {
+      // 교수에게 메시지 전송
       send_msg_to_professor(msg, str_len);
     }
   }
 
+  // 클라이언트 연결 종료 처리
   pthread_mutex_lock(&mutx);
   for (i = 0; i < clnt_cnt; i++) {
     if (clnt_sock == clnt_socks[i]) {
@@ -172,8 +175,9 @@ void *handle_clnt(void *arg) {
 
 void send_msg_to_all(char *msg, int len) {
   pthread_mutex_lock(&mutx);
+  // 모든 클라이언트에게 메시지 전송
   for (int i = 0; i < clnt_cnt; i++) {
-    if (clnt_socks[i] != professor_sock) {
+    if (clnt_socks[i] != professor_sock) { // 교수 소켓 제외
       write(clnt_socks[i], msg, len);
     }
   }
@@ -182,6 +186,7 @@ void send_msg_to_all(char *msg, int len) {
 
 void send_msg_to_professor(char *msg, int len) {
   pthread_mutex_lock(&mutx);
+  // 교수에게 메시지 전송
   if (professor_sock != -1) {
     write(professor_sock, msg, len);
   }
@@ -189,13 +194,14 @@ void send_msg_to_professor(char *msg, int len) {
 }
 
 void send_msg_to_student(int student_sock, char *msg, int len) {
+  // 특정 학생에게 메시지 전송
   write(student_sock, msg, len);
 }
 
 void send_msg_to_student_by_number(const char *student_number, char *msg,
                                    int len) {
-  fprintf(stderr, "send_msg_to_student_by_number\n");
   pthread_mutex_lock(&mutx);
+  // 학번을 통해 특정 학생에게 메시지 전송
   for (int i = 0; i < student_count; i++) {
     if (strcmp(students[i].student_number, student_number) == 0) {
       write(students[i].socket, msg, len);
