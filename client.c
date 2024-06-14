@@ -26,7 +26,7 @@ int main(int argc, char *argv[]) {
   void *thread_return;
 
   if (argc != 3) {
-    printf("Usage: %s <IP> <port>\n", argv[0]);
+    fprintf(stderr, "Usage: %s <IP> <port>\n", argv[0]);
     exit(1);
   }
 
@@ -42,9 +42,9 @@ int main(int argc, char *argv[]) {
   if (connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) == -1)
     error_handling("connect() error");
 
-  printf("Connected to server\n");
+  fprintf(stderr, "Connected to server\n");
 
-  printf("Are you a professor? (yes/no): ");
+  fprintf(stderr, "Are you a professor? (yes/no): ");
   char response[10];
   fgets(response, sizeof(response), stdin);
   if (strncmp(response, "yes", 3) == 0) {
@@ -53,32 +53,23 @@ int main(int argc, char *argv[]) {
   } else {
     write(sock, "student", strlen("student"));
   }
+  // 이름 입력받기
+  fprintf(stderr, "Enter your name: ");
+  fgets(name, STU_INFO_SIZE - 2, stdin);
+  name[strcspn(name, "\n")] = 0;
+  write(sock, name, strlen(name));
 
-  if (is_professor) {
-    printf("Enter your name: ");
-    fgets(name, STU_INFO_SIZE - 2, stdin);
-    name[strcspn(name, "\n")] = 0;
-    char formatted_name[STU_INFO_SIZE];
-    snprintf(formatted_name, STU_INFO_SIZE, "[%s]", name);
-    strncpy(name, formatted_name, STU_INFO_SIZE);
-
-    write(sock, name, strlen(name));
-  } else {
-    printf("Enter your name: ");
-    fgets(name, STU_INFO_SIZE - 2, stdin);
-    name[strcspn(name, "\n")] = 0;
-    char formatted_name[STU_INFO_SIZE];
-    snprintf(formatted_name, STU_INFO_SIZE, "[%s]", name);
-    strncpy(name, formatted_name, STU_INFO_SIZE);
-
-    printf("Enter your student number: ");
+  // 교수가 아니라면 학번 입력받기
+  if (!is_professor) {
+    fprintf(stderr, "Enter your student number: ");
     fgets(stuNum, STU_INFO_SIZE - 2, stdin);
     stuNum[strcspn(stuNum, "\n")] = 0;
-    char formatted_stuNum[STU_INFO_SIZE];
-    snprintf(formatted_stuNum, STU_INFO_SIZE, "[%s]", stuNum);
-    strncpy(stuNum, formatted_stuNum, STU_INFO_SIZE);
 
-    write(sock, name, strlen(name));
+    // 공백 제거 및 숫자값만 추출
+    char temp[STU_INFO_SIZE];
+    sscanf(stuNum, "%s", temp);
+    strncpy(stuNum, temp, STU_INFO_SIZE);
+
     write(sock, stuNum, strlen(stuNum));
   }
 
@@ -101,16 +92,18 @@ void *send_msg(void *arg) {
     if (!strncmp(msg, "quit", 4)) {
       close(sock);
       exit(0);
-    } else if (!strncmp(msg, "sendfile ", 9)) {
+    } else if (strncmp(msg, "sendto:", 7) == 0) {
+      write(sock, msg, strlen(msg));
+    } else if (!strncmp(msg, "sendfile:", 9)) {
       char filename[BUF_SIZE];
       sscanf(msg + 9, "%s", filename);
 
       FILE *fp = fopen(filename, "r");
       if (fp == NULL) {
-        printf("Failed to open file %s\n", filename);
+        fprintf(stderr, "Failed to open file %s\n", filename);
         continue;
       }
-
+      fprintf(stderr, "filename: %s\n", filename);
       snprintf(msg_with_name, sizeof(msg_with_name), "%s: %s", name, msg);
 
       // Send filename
@@ -123,7 +116,8 @@ void *send_msg(void *arg) {
         write(sock, file_buffer, n);
       }
       fclose(fp);
-      printf("File %s sent successfully.\n", filename);
+      fprintf(stderr, "File %s sent successfully.\n", filename);
+      fflush(stdout);
     } else {
       snprintf(msg_with_name, sizeof(msg_with_name), "%s: %s", name, msg);
       write(sock, msg_with_name, strlen(msg_with_name));
@@ -142,8 +136,8 @@ void *recv_msg(void *arg) {
     if (str_len == -1)
       return (void *)-1;
     name_msg[str_len] = 0;
-    printf("%s\n", name_msg); // 줄바꿈 문자를 추가하여 출력
-    fflush(stdout);           // 출력 버퍼 비우기
+    fprintf(stderr, "%s\n", name_msg); // 줄바꿈 문자를 추가하여 출력
+    fflush(stdout);                    // 출력 버퍼 비우기
   }
   return NULL;
 }
