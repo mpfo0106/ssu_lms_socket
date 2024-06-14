@@ -120,6 +120,13 @@ void *handle_clnt(void *arg) {
   // 일반 메시지 처리
   while ((str_len = read(clnt_sock, msg, sizeof(msg) - 1)) > 0) {
     msg[str_len] = '\0';
+    // filename: 명령어는 교수와 학생 모두 사용할 수 있음
+    if (strncmp(msg, "sendfile:", 9) == 0) {
+      sscanf(msg + 9, "%s", filename);
+      handle_file_transfer(clnt_sock, filename);
+      continue; // 다음 메시지로 넘어감
+    }
+
     if (is_professor) {
       if (strncmp(msg, "sendto:", 7) == 0) {
         fprintf(stderr, "good\n");
@@ -136,21 +143,16 @@ void *handle_clnt(void *arg) {
             send_msg_to_student_by_number(student_number, message,
                                           strlen(message));
           } else {
-            fprintf(stderr, "No message provided\n");
+            error_handling("No message provided\n");
           }
         } else {
-          fprintf(stderr, "Invalid sendto format\n");
+          error_handling("Invalid sendto format\n");
         }
       } else {
         send_msg_to_all(msg, str_len);
       }
     } else {
-      if (strncmp(msg, "filename:", 9) == 0) {
-        sscanf(msg + 9, "%s", filename);
-        handle_file_transfer(clnt_sock, filename);
-      } else {
-        send_msg_to_professor(msg, str_len);
-      }
+      send_msg_to_professor(msg, str_len);
     }
   }
 
@@ -209,27 +211,25 @@ void handle_file_transfer(int clnt_sock, char *filename) {
   char filepath[BUF_SIZE];
   char directory[BUF_SIZE];
 
+  // 기본 디렉토리 생성
   snprintf(directory, sizeof(directory), "serverFiles");
   if (mkdir(directory, 0777) == -1 && errno != EEXIST) {
     error_handling("Error in creating directory.");
     return;
   }
 
-  snprintf(directory, sizeof(directory), "serverFiles/%d", clnt_sock);
-  if (mkdir(directory, 0777) == -1 && errno != EEXIST) {
-    error_handling("Error in creating directory.");
-    return;
-  }
-
-  snprintf(filepath, sizeof(filepath), "serverFiles/%d/%s", clnt_sock,
-           filename);
+  // 파일 경로 설정
+  snprintf(filepath, sizeof(filepath), "serverFiles/%s", filename);
   FILE *file = fopen(filepath, "w");
   if (file == NULL) {
     fprintf(stderr, "Failed to open file %s: %s\n", filepath, strerror(errno));
     return;
   }
+  fprintf(stderr, "File %s opened successfully.\n", filepath);
 
+  // 파일 수신 및 저장
   while ((n = read(clnt_sock, file_buffer, FILE_BUF_SIZE)) > 0) {
+    fprintf(stderr, "filebuffer: %s \n", file_buffer);
     fwrite(file_buffer, sizeof(char), n, file);
     bzero(file_buffer, FILE_BUF_SIZE);
   }

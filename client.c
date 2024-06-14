@@ -95,6 +95,7 @@ void *send_msg(void *arg) {
     } else if (strncmp(msg, "sendto:", 7) == 0) {
       write(sock, msg, strlen(msg));
     } else if (!strncmp(msg, "sendfile:", 9)) {
+      write(sock, msg, strlen(msg));
       char filename[BUF_SIZE];
       sscanf(msg + 9, "%s", filename);
 
@@ -103,16 +104,12 @@ void *send_msg(void *arg) {
         fprintf(stderr, "Failed to open file %s\n", filename);
         continue;
       }
-      fprintf(stderr, "filename: %s\n", filename);
-      snprintf(msg_with_name, sizeof(msg_with_name), "%s: %s", name, msg);
-
-      // Send filename
-      write(sock, msg_with_name, strlen(msg_with_name));
 
       // Send file content
       char file_buffer[FILE_BUF_SIZE];
       size_t n;
       while ((n = fread(file_buffer, 1, FILE_BUF_SIZE, fp)) > 0) {
+        fprintf(stderr, "filebuffer: %s \n", file_buffer);
         write(sock, file_buffer, n);
       }
       fclose(fp);
