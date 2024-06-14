@@ -142,7 +142,8 @@ void *recv_msg(void *arg) {
     if (str_len == -1)
       return (void *)-1;
     name_msg[str_len] = 0;
-    fputs(name_msg, stdout);
+    printf("%s\n", name_msg); // 줄바꿈 문자를 추가하여 출력
+    fflush(stdout);           // 출력 버퍼 비우기
   }
   return NULL;
 }
